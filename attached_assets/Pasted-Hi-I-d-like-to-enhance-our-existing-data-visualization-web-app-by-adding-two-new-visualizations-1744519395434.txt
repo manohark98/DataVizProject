@@ -1,0 +1,54 @@
+Hi ,
+
+I’d like to enhance our existing data visualization web app by adding two new visualizations  Below are the details and requirements for each visualization:
+
+------------------------------------------------------
+**1. Tree Diagram**
+
+**Objective:**  
+Display a hierarchical representation of key mental health aspects in our dataset.
+
+**Structure:**  
+- **Root Node:** “Mental Health” (a conceptual aggregation)
+- **Child Nodes:**  
+  - **Diagnosis:** Use the “Diagnosis” column to denote whether an employee is diagnosed (e.g., Yes/No)  
+  - **Treatment:** Use the “Sought Treatment” column indicating if treatment was sought  
+  - **Workplace:** Use the “Responsible Employer” column to display whether the employer supports mental health (e.g., Supportive/Not Supportive)
+
+**Optional Details:**  
+- If possible, include additional contextual information from columns like “Company Size” or “Age-Group” to further refine the hierarchy.
+
+**Required List of Columns for Tree Diagram:**  
+- Diagnosis  
+- Sought Treatment  
+- Responsible Employer  
+- *(Optionally: Company Size, Age-Group)*
+
+------------------------------------------------------
+**2. Network Graph**
+
+**Objective:**  
+Display a network visualization that shows interrelationships among high-level mental health variables without embedding binary or leaf-level responses.
+
+**Nodes (Variables):**  
+- Family History of Mental Illness  
+- Sought Treatment  
+- Diagnosis  
+- Discuss Mental Health Problems  
+- Responsible Employer
+
+**Relationships (Edges):**  
+- The graph should infer potential links such as:
+  - Link “Family History of Mental Illness” to “Sought Treatment”  
+  - Link “Sought Treatment” to “Diagnosis”  
+  - Link “Diagnosis” to “Discuss Mental Health Problems”  
+  - Link “Discuss Mental Health Problems” to “Responsible Employer”
+
+**Required List of Columns for Network Graph:**  
+- Family History of Mental Illness  
+- Sought Treatment  
+- Diagnosis  
+- Discuss Mental Health Problems  
+- Responsible Employer
+
+--------------------------------------------
