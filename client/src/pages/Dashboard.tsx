@@ -28,7 +28,7 @@ export default function Dashboard() {
         <div className="mb-8">
           <h2 className="text-2xl font-bold mb-2">Mental Health in Tech Dashboard</h2>
           <p className="text-gray-600 dark:text-gray-300 max-w-3xl">
-            Explore data from a 2014 survey that measures attitudes towards mental health and frequency of mental health disorders in the tech workplace.
+            Explore data from a 2014 to 2019 survey that measures attitudes towards mental health and frequency of mental health disorders in the tech workplace.
           </p>
         </div>
 
@@ -38,15 +38,15 @@ export default function Dashboard() {
         {/* Filter Controls */}
         <FilterControls />
 
-
         {/* Advanced Visualizations */}
-        <div className="mt-8 mb-8">
+        <div className="mt-8">
           <h3 className="text-xl font-bold mb-4">Advanced Visualizations</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             <MentalHealthTreeChart />
             <MentalHealthNetworkGraph />
           </div>
         </div>
+
 
         {/* Standard Visualization Grid */}
         <div className="mt-8">

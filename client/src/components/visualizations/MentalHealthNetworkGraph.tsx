@@ -1,20 +1,22 @@
-import { useEffect, useState, useRef } from "react";
+import { useRef, useEffect, useState } from "react";
+import * as d3 from "d3";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus, Minus } from "lucide-react";
 import { useDataContext } from "@/hooks/useDataContext";
-import * as d3 from "d3";
 import { SurveyRecord } from "@/types";
 
-interface NetworkNode {
+interface NetworkNode extends d3.SimulationNodeDatum {
   id: string;
   group: number;
   count: number;
   x?: number;
   y?: number;
+  fx?: number | null;
+  fy?: number | null;
 }
 
-interface NetworkLink {
+interface NetworkLink extends d3.SimulationLinkDatum<NetworkNode> {
   source: string | NetworkNode;
   target: string | NetworkNode;
   value: number;
@@ -41,7 +43,7 @@ export default function MentalHealthNetworkGraph() {
   };
 
   const decreaseSize = () => {
-    setScale((prevScale) => Math.max(prevScale - 0.2, 0.1));
+    setScale((prevScale) => Math.max(prevScale - 0.2, 0.5));
   };
 
   useEffect(() => {
@@ -69,175 +71,181 @@ export default function MentalHealthNetworkGraph() {
     // Clear any existing SVG content
     svg.selectAll("*").remove();
 
-    // Dimensions
-    const width = 100;
-    const height = 75;
-    const margin = { top: 3, right: 3, bottom: 3, left: 3 };
-    const innerWidth = width - margin.left - margin.right;
-    const innerHeight = height - margin.top - margin.bottom;
+    // Set up dimensions based on the container
+    const containerWidth = svg.node()?.getBoundingClientRect().width || 600;
+    const containerHeight = svg.node()?.getBoundingClientRect().height || 400;
+    
+    // Ensure SVG viewBox matches container
+    svg.attr("viewBox", `0 0 ${containerWidth} ${containerHeight}`)
+       .attr("preserveAspectRatio", "xMidYMid meet");
+    
+    // Margins
+    const margin = { top: 30, right: 20, bottom: 20, left: 20 };
+    const width = containerWidth - margin.left - margin.right;
+    const height = containerHeight - margin.top - margin.bottom;
+    
+    // Center calculation for proper centering during zoom
+    const centerX = width / 2;
+    const centerY = height / 2;
 
-    // Build network data
+    // Process data for network graph
     const networkData = processNetworkData(filteredData);
 
-    // Convert any string source/target into references to the actual node objects
-    networkData.links.forEach((link) => {
-      if (typeof link.source === "string") {
-        link.source = networkData.nodes.find((n) => n.id === link.source)!;
-      }
-      if (typeof link.target === "string") {
-        link.target = networkData.nodes.find((n) => n.id === link.target)!;
-      }
-    });
-
-    // --------------------------------------
-    // 1) Define a scale for node radii so big counts don't overlap too much
-    //    Adjust [3, 15] to whichever min/max circle size suits your data best
-    // --------------------------------------
-    const maxCount = d3.max(networkData.nodes, (d) => d.count) || 1;
-    const radiusScale = d3
-      .scaleSqrt<number, number>()
-      .domain([0, maxCount])
-      .range([3, 15]);
-
-    // --------------------------------------
-    // 2) Place the nodes in a circular layout
-    //    so they won't overlap as heavily.
-    //
-    //    We base the circle radius on the largest node size,
-    //    plus some extra spacing (30 + maxNodeRadius).
-    //    Feel free to tweak these constants.
-    // --------------------------------------
-    const maxNodeRadius =
-      d3.max(networkData.nodes, (d) => radiusScale(d.count)) || 0;
-    const layoutRadius = 30 + maxNodeRadius; // How far out from the center to place nodes
-
-    const centerX = innerWidth / 2;
-    const centerY = innerHeight / 2;
-
-    networkData.nodes.forEach((node, i) => {
-      const angle = (i / networkData.nodes.length) * 2 * Math.PI;
-      node.x = centerX + layoutRadius * Math.cos(angle);
-      node.y = centerY + layoutRadius * Math.sin(angle);
-    });
-
-    // Create main <g> container with scaling/zoom
+    // Create a container group with scaling and centering
     const g = svg
       .append("g")
       .attr(
         "transform",
-        `translate(${margin.left}, ${margin.top}) scale(${currentScale})`,
+        `translate(${margin.left}, ${margin.top}) scale(${currentScale}) translate(${(1-currentScale) * centerX / currentScale}, ${(1-currentScale) * centerY / currentScale})`
       );
 
-    // Color palette for groups
-    const colorScale = d3.scaleOrdinal<string>(d3.schemeCategory10);
+    // Create a force simulation - adjusted for optimal visualization
+    const simulation = d3
+      .forceSimulation<NetworkNode>()
+      .force(
+        "link",
+        d3
+          .forceLink<NetworkNode, NetworkLink>()
+          .id((d: NetworkNode) => d.id)
+          .distance((d: NetworkLink) => 100) // Fixed distance for better layout
+          .strength(0.2) // Reduced strength for more stable layout
+      )
+      .force("charge", d3.forceManyBody<NetworkNode>().strength(-300)) // Stronger repulsion
+      .force(
+        "center",
+        d3.forceCenter<NetworkNode>(width / 2, height / 2),
+      )
+      .force(
+        "collide",
+        d3
+          .forceCollide<NetworkNode>()
+          .radius((d: NetworkNode) => 40), // Larger collision radius
+      );
 
-    // --------------------------------------
-    // Draw links
-    // --------------------------------------
+    // Create a color scale with lighter, pastel colors
+    const colorScale = d3.scaleOrdinal<string>()
+      .domain(["1", "2", "3", "4", "5"])
+      .range(["#90cdf4", "#9ae6b4", "#fbd38d", "#feb2b2", "#d6bcfa"]);
+
+    // Create links (edges)
     const link = g
       .append("g")
       .selectAll("line")
       .data(networkData.links)
       .join("line")
-      .attr("stroke-width", (d) => Math.sqrt(d.value) * 2)
-      .attr("stroke", (d) => d3.interpolateViridis(d.correlation))
-      .attr("stroke-opacity", 0.8)
-      .attr("x1", (d) => (d.source as NetworkNode).x ?? 0)
-      .attr("y1", (d) => (d.source as NetworkNode).y ?? 0)
-      .attr("x2", (d) => (d.target as NetworkNode).x ?? 0)
-      .attr("y2", (d) => (d.target as NetworkNode).y ?? 0);
+      .attr("stroke-width", 3)
+      .attr("stroke", "#999")
+      .attr("stroke-opacity", 0.6);
 
-    // --------------------------------------
-    // Draw nodes
-    // --------------------------------------
+    // Create nodes
     const nodeGroup = g
       .append("g")
       .selectAll<SVGGElement, NetworkNode>(".node")
       .data(networkData.nodes)
       .join("g")
       .attr("class", "node")
-      .attr("transform", (d) => `translate(${d.x}, ${d.y})`)
       .call(
         d3
           .drag<SVGGElement, NetworkNode>()
           .on("start", dragstarted)
-          .on("drag", (event, d) => dragged(event, d, link))
+          .on("drag", dragged)
           .on("end", dragended),
       );
 
-    // Circle for each node
+    // Add circles to nodes
     nodeGroup
       .append("circle")
-      .attr("r", (d) => radiusScale(d.count))
-      .attr("fill", (d) => colorScale(d.group.toString()))
+      .attr("r", 25) // Fixed size for better visibility
+      .attr("fill", (d: NetworkNode) => colorScale(d.group.toString()))
       .attr("stroke", "#fff")
-      .attr("stroke-width", 0.5);
+      .attr("stroke-width", 2);
 
-    // Label (tiny text)
+    // Add labels to nodes
     nodeGroup
       .append("text")
       .attr("text-anchor", "middle")
       .attr("dy", ".35em")
-      .attr("font-size", "4px")
+      .attr("font-size", "12px")
       .attr("font-weight", "bold")
-      .text((d) => formatLabel(d.id));
+      .attr("fill", "#000")
+      .text((d: NetworkNode) => formatLabel(d.id));
 
-    // Tooltip
-    nodeGroup.append("title").text((d) => `${d.id}\nCount: ${d.count}`);
+    // Add title for tooltips
+    nodeGroup
+      .append("title")
+      .text((d: NetworkNode) => `${d.id}\nCount: ${d.count}`);
 
-    // Drag event helpers
-    function dragstarted(
-      event: d3.D3DragEvent<SVGGElement, NetworkNode, unknown>,
-      d: NetworkNode,
-    ) {
-      d3.select(event.sourceEvent.currentTarget).raise();
+    // Update node and link positions on each tick of the simulation
+    simulation.nodes(networkData.nodes).on("tick", ticked);
+
+    const linkForce =
+      simulation.force<d3.ForceLink<NetworkNode, NetworkLink>>("link");
+    if (linkForce) {
+      linkForce.links(networkData.links);
     }
 
-    // On drag, move node + update connected links
-    function dragged(
-      event: d3.D3DragEvent<SVGGElement, NetworkNode, unknown>,
-      d: NetworkNode,
-      linkSelection: d3.Selection<
-        SVGLineElement,
-        NetworkLink,
-        SVGGElement,
-        unknown
-      >,
-    ) {
-      d.x = event.x;
-      d.y = event.y;
-      d3.select(event.sourceEvent.currentTarget).attr(
-        "transform",
-        `translate(${d.x}, ${d.y})`,
-      );
+    function ticked() {
+      link
+        .attr("x1", (d: NetworkLink) => {
+          const source = d.source as NetworkNode;
+          return source.x || 0;
+        })
+        .attr("y1", (d: NetworkLink) => {
+          const source = d.source as NetworkNode;
+          return source.y || 0;
+        })
+        .attr("x2", (d: NetworkLink) => {
+          const target = d.target as NetworkNode;
+          return target.x || 0;
+        })
+        .attr("y2", (d: NetworkLink) => {
+          const target = d.target as NetworkNode;
+          return target.y || 0;
+        });
 
-      // Update the lines
-      linkSelection
-        .attr("x1", (l) => (l.source as NetworkNode).x ?? 0)
-        .attr("y1", (l) => (l.source as NetworkNode).y ?? 0)
-        .attr("x2", (l) => (l.target as NetworkNode).x ?? 0)
-        .attr("y2", (l) => (l.target as NetworkNode).y ?? 0);
+      nodeGroup.attr(
+        "transform",
+        (d: NetworkNode) => `translate(${d.x || 0}, ${d.y || 0})`,
+      );
+    }
+
+    function dragstarted(
+      event: d3.D3DragEvent<SVGGElement, NetworkNode, any>,
+      d: NetworkNode,
+    ) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+
+    function dragged(
+      event: d3.D3DragEvent<SVGGElement, NetworkNode, any>,
+      d: NetworkNode,
+    ) {
+      d.fx = event.x;
+      d.fy = event.y;
     }
 
     function dragended(
-      event: d3.D3DragEvent<SVGGElement, NetworkNode, unknown>,
+      event: d3.D3DragEvent<SVGGElement, NetworkNode, any>,
       d: NetworkNode,
     ) {
-      // No action needed
+      if (!event.active) simulation.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
     }
 
-    // (Optional) Title text
+    // Add chart title
     svg
       .append("text")
-      .attr("x", width / 2)
-      .attr("y", 8)
+      .attr("x", containerWidth / 2)
+      .attr("y", 20)
       .attr("text-anchor", "middle")
-      .attr("font-size", "6px")
-      .attr("font-weight", "bold");
+      .attr("font-size", "16px")
+      .attr("font-weight", "bold")
+      .text("Mental Health Variables Network");
 
-    // --------------------------------------
-    // Legend
-    // --------------------------------------
+    // Add legend
     const legendItems: LegendItem[] = [
       { label: "Family History", group: 1 },
       { label: "Sought Treatment", group: 2 },
@@ -249,39 +257,42 @@ export default function MentalHealthNetworkGraph() {
     const legend = svg
       .append("g")
       .attr("font-family", "sans-serif")
-      .attr("font-size", 3)
+      .attr("font-size", 12)
       .attr("text-anchor", "start")
       .selectAll("g")
       .data(legendItems)
       .join("g")
-      .attr("transform", (_d, i) => `translate(${width - 40}, ${i * 6 + 15})`);
+      .attr(
+        "transform",
+        (d: LegendItem, i: number) => `translate(${width - 160}, ${i * 25 + 50})`,
+      );
 
     legend
       .append("rect")
-      .attr("width", 10)
-      .attr("height", 10)
-      .attr("fill", (d) => colorScale(d.group.toString()));
+      .attr("width", 18)
+      .attr("height", 18)
+      .attr("fill", (d: LegendItem) => colorScale(d.group.toString()));
 
     legend
       .append("text")
       .attr("x", 24)
-      .attr("y", 9.5)
+      .attr("y", 9)
       .attr("dy", "0.32em")
-      .text((d) => d.label);
+      .text((d: LegendItem) => d.label);
   }
 
   function formatLabel(text: string): string {
-    // Abbreviate or rename as desired
-    if (text === "FamilyHistory") return "Family History";
+    // Abbreviate or format labels to fit in nodes
+    if (text === "FamilyHistory") return "Family\nHistory";
     if (text === "SoughtTreatment") return "Treatment";
     if (text === "Diagnosis") return "Diagnosis";
-    if (text === "DiscussMHProblems") return "Discuss Mental Health";
+    if (text === "DiscussMHProblems") return "Discuss\nMH";
     if (text === "ResponsibleEmployer") return "Employer";
     return text;
   }
 
   function processNetworkData(data: SurveyRecord[]): NetworkData {
-    // Create 5 nodes
+    // Define nodes
     const nodes: NetworkNode[] = [
       {
         id: "FamilyHistory",
@@ -311,37 +322,31 @@ export default function MentalHealthNetworkGraph() {
       },
     ];
 
-    // Example: connect them in a loop
+    // Define links with predefined connections based on requirements
     const links: NetworkLink[] = [
       {
-        source: "ResponsibleEmployer",
+        source: "FamilyHistory",
         target: "SoughtTreatment",
-        value: 1,
-        correlation: 0.8,
+        value: 5,
+        correlation: 0.7,
       },
       {
         source: "SoughtTreatment",
-        target: "FamilyHistory",
-        value: 1,
-        correlation: 0.8,
-      },
-      {
-        source: "FamilyHistory",
         target: "Diagnosis",
-        value: 1,
+        value: 5,
         correlation: 0.8,
       },
       {
         source: "Diagnosis",
         target: "DiscussMHProblems",
-        value: 1,
-        correlation: 0.8,
+        value: 5,
+        correlation: 0.6, 
       },
       {
         source: "DiscussMHProblems",
         target: "ResponsibleEmployer",
-        value: 1,
-        correlation: 0.8,
+        value: 5,
+        correlation: 0.5,
       },
     ];
 
@@ -354,23 +359,21 @@ export default function MentalHealthNetworkGraph() {
         <h3 className="font-semibold">Mental Health Network Graph</h3>
       </div>
       <CardContent className="p-4">
-        <div className="h-[250px]">
+        <div className="h-[400px]">
           <svg
             ref={svgRef}
             style={{ width: "100%", height: "100%" }}
-            viewBox="0 0 100 75"
-            preserveAspectRatio="xMidYMid meet"
           />
         </div>
 
-        <div className="flex items-center justify-end space-x-2 mt-2 mb-2">
+        <div className="flex items-center justify-end space-x-2 mt-4 mb-2">
           <span className="text-xs text-gray-500">Zoom:</span>
           <Button
             variant="outline"
             size="icon"
             className="h-6 w-6"
             onClick={decreaseSize}
-            disabled={scale <= 0.1}
+            disabled={scale <= 0.5}
           >
             <Minus className="h-3 w-3" />
           </Button>
@@ -390,10 +393,11 @@ export default function MentalHealthNetworkGraph() {
 
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
           This network graph visualizes relationships between key mental health
-          variables in the tech industry. Nodes are placed in a circle to reduce
-          overlap, with each node sized according to how many respondents said
-          “Yes” to that item. You can drag nodes around to rearrange them as
-          needed.
+          variables in the tech industry. Nodes represent different aspects of
+          mental health (family history, seeking treatment, diagnosis, etc.),
+          and the links between them show potential correlations. The size of
+          each node corresponds to the count of respondents, while the thickness
+          and color of links indicate the strength of the relationship.
         </p>
       </CardContent>
     </Card>
