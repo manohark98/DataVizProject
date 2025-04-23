@@ -28,7 +28,7 @@ export default function Dashboard() {
         <div className="mb-8">
           <h2 className="text-2xl font-bold mb-2">Mental Health in Tech Dashboard</h2>
           <p className="text-gray-600 dark:text-gray-300 max-w-3xl">
-            Explore data from a 2014 to 2019 survey that measures attitudes towards mental health and frequency of mental health disorders in the tech workplace.
+            Explore data from a 2014 survey that measures attitudes towards mental health and frequency of mental health disorders in the tech workplace.
           </p>
         </div>
 

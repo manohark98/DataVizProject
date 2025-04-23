@@ -29,8 +29,22 @@ export default function AgeGroupDistributionChart() {
       return;
     }
 
-    // Clear previous chart
+    // Clear previous chart and create tooltip
     svg.selectAll("*").remove();
+    
+    // Create tooltip
+    const tooltip = d3.select("body")
+      .append("div")
+      .attr("class", "chart-tooltip")
+      .style("position", "absolute")
+      .style("background", "white")
+      .style("border", "1px solid #ddd")
+      .style("border-radius", "4px")
+      .style("padding", "10px")
+      .style("box-shadow", "2px 2px 6px rgba(0, 0, 0, 0.28)")
+      .style("pointer-events", "none")
+      .style("opacity", 0)
+      .style("z-index", 1000);
 
     // Dimensions
     const width = 500;
@@ -60,6 +74,15 @@ export default function AgeGroupDistributionChart() {
       .domain(data.map(d => d.ageGroup))
       .range(["#4F46E5", "#10B981", "#F59E0B", "#DC2626", "#8B5CF6"]);
 
+    // Chart title
+    svg.append("text")
+      .attr("x", width / 2)
+      .attr("y", 15)
+      .attr("text-anchor", "middle")
+      .attr("font-size", "16px")
+      .attr("font-weight", "bold")
+      .text("Age Group Distribution");
+
     // Create group for the chart
     const g = svg.append("g")
       .attr("transform", `translate(${width / 2}, ${height / 2})`);
@@ -84,12 +107,52 @@ export default function AgeGroupDistributionChart() {
       .join("g")
       .attr("class", "arc");
 
+    // Add path with tooltips
     arcs.append("path")
       .attr("d", arc)
       .attr("fill", d => color(d.data.ageGroup))
       .attr("stroke", "white")
       .attr("stroke-width", 2)
-      .style("opacity", 0.8);
+      .style("opacity", 0.8)
+      .on("mouseover", function(event: any, d) {
+        // Highlight the segment
+        d3.select(this)
+          .style("opacity", 1)
+          .attr("stroke-width", 3);
+        
+        // Calculate additional stats
+        const mentalHealthIssuesCount = filteredData
+          .filter(record => record.ageGroup === d.data.ageGroup)
+          .filter(record => record.soughtTreatment || record.familyHistory === "Yes" || record.disorder).length;
+        
+        const ageGroupRecords = filteredData.filter(record => record.ageGroup === d.data.ageGroup);
+        const mentalHealthPercentage = (mentalHealthIssuesCount / ageGroupRecords.length) * 100;
+        
+        // Show tooltip
+        tooltip
+          .style("opacity", 1)
+          .html(`
+            <div style="font-weight: bold; margin-bottom: 4px;">${d.data.ageGroup} Age Group</div>
+            <div>Count: ${d.data.count} respondents</div>
+            <div>Percentage: ${d.data.percentage.toFixed(1)}% of total</div>
+            <div>Mental health issues: ${mentalHealthPercentage.toFixed(1)}%</div>
+          `)
+          .style("left", (event.pageX + 10) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mousemove", function(event: any) {
+        // Update tooltip position when moving
+        tooltip
+          .style("left", (event.pageX + 10) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseleave", function() {
+        // Reset the segment and hide tooltip
+        d3.select(this)
+          .style("opacity", 0.8)
+          .attr("stroke-width", 2);
+        tooltip.style("opacity", 0);
+      });
 
     // Add labels
     arcs.append("text")
@@ -125,14 +188,58 @@ export default function AgeGroupDistributionChart() {
         .text("Total");
     }
 
-    // Add legend
+    // Add legend with clickable interactivity
     const legend = svg.append("g")
       .attr("transform", `translate(20, 20)`)
       .selectAll(".legend")
       .data(data)
       .join("g")
       .attr("class", "legend")
-      .attr("transform", (d, i) => `translate(0, ${i * 20})`);
+      .attr("transform", (d, i) => `translate(0, ${i * 20})`)
+      .style("cursor", "pointer")
+      .on("mouseover", function(event: any, d) {
+        // Highlight corresponding pie segment
+        arcs.selectAll("path")
+          .filter((arcData: any) => arcData.data.ageGroup === d.ageGroup)
+          .style("opacity", 1)
+          .attr("stroke-width", 3);
+          
+        // Calculate additional stats
+        const mentalHealthIssuesCount = filteredData
+          .filter(record => record.ageGroup === d.ageGroup)
+          .filter(record => record.soughtTreatment || record.familyHistory === "Yes" || record.disorder).length;
+        
+        const ageGroupRecords = filteredData.filter(record => record.ageGroup === d.ageGroup);
+        const mentalHealthPercentage = (mentalHealthIssuesCount / ageGroupRecords.length) * 100;
+        
+        // Show tooltip
+        tooltip
+          .style("opacity", 1)
+          .html(`
+            <div style="font-weight: bold; margin-bottom: 4px;">${d.ageGroup} Age Group</div>
+            <div>Count: ${d.count} respondents</div>
+            <div>Percentage: ${d.percentage.toFixed(1)}% of total</div>
+            <div>Mental health issues: ${mentalHealthPercentage.toFixed(1)}%</div>
+          `)
+          .style("left", (event.pageX + 10) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mousemove", function(event: any) {
+        // Update tooltip position when moving
+        tooltip
+          .style("left", (event.pageX + 10) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseleave", function(event: any, d) {
+        // Reset pie segment
+        arcs.selectAll("path")
+          .filter((arcData: any) => arcData.data.ageGroup === d.ageGroup)
+          .style("opacity", 0.8)
+          .attr("stroke-width", 2);
+          
+        // Hide tooltip
+        tooltip.style("opacity", 0);
+      });
 
     legend.append("rect")
       .attr("width", 12)
@@ -145,6 +252,11 @@ export default function AgeGroupDistributionChart() {
       .attr("dy", ".35em")
       .attr("font-size", "12px")
       .text(d => `${d.ageGroup} (${Math.round(d.percentage)}%)`);
+      
+    // Clean up tooltip on refresh/unmount
+    return () => {
+      tooltip.remove();
+    };
   }
 
   return (
@@ -179,9 +291,17 @@ export default function AgeGroupDistributionChart() {
             preserveAspectRatio="xMidYMid meet"
           />
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          This chart shows the distribution of respondents across different age groups. The majority of respondents fall within the 21-30 and 31-40 age ranges.
-        </p>
+        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+          <p>
+            This chart shows the distribution of respondents across different age groups.
+          </p>
+          <ul className="list-disc list-inside pl-2 space-y-0.5">
+            <li>Hover over pie segments to see detailed information</li>
+            <li>Hover over legend items to highlight the corresponding segment</li>
+            <li>Toggle between Pie and Donut views using the buttons above</li>
+            <li>The legend shows each age group with its percentage of total respondents</li>
+          </ul>
+        </div>
       </CardContent>
     </Card>
   );

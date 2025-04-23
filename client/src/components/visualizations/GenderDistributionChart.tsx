@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useDataContext } from "@/hooks/useDataContext";
@@ -16,7 +16,9 @@ interface GenderFactorData {
 export default function GenderDistributionChart() {
   const { filteredData } = useDataContext();
   const [chartType, setChartType] = useState<ChartType>("bar");
-  const svgRef = useD3(renderChart, [filteredData, chartType]);
+  const [activeGenders, setActiveGenders] = useState<string[]>(["male", "female", "undecided"]);
+  
+  const svgRef = useD3(renderChart, [filteredData, chartType, activeGenders]);
 
   function renderChart(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>) {
     if (!filteredData || filteredData.length === 0) {
@@ -30,8 +32,22 @@ export default function GenderDistributionChart() {
       return;
     }
 
-    // Clear previous chart
+    // Clear previous chart and create tooltip
     svg.selectAll("*").remove();
+    
+    // Create tooltip
+    const tooltip = d3.select("body")
+      .append("div")
+      .attr("class", "chart-tooltip")
+      .style("position", "absolute")
+      .style("background", "white")
+      .style("border", "1px solid #ddd")
+      .style("border-radius", "4px")
+      .style("padding", "10px")
+      .style("box-shadow", "2px 2px 6px rgba(0, 0, 0, 0.28)")
+      .style("pointer-events", "none")
+      .style("opacity", 0)
+      .style("z-index", 1000);
 
     // Dimensions
     const width = 500;
@@ -44,6 +60,25 @@ export default function GenderDistributionChart() {
     const male = filteredData.filter(d => d.gender === "Male");
     const female = filteredData.filter(d => d.gender === "Female");
     const undecided = filteredData.filter(d => d.gender === "Undecided");
+
+    // Get actual counts for tooltips
+    const maleCounts = {
+      soughtTreatment: male.filter(d => d.soughtTreatment).length,
+      familyHistory: male.filter(d => d.familyHistory === "Yes").length,
+      preferAnonymity: male.filter(d => d.preferAnonymity).length
+    };
+    
+    const femaleCounts = {
+      soughtTreatment: female.filter(d => d.soughtTreatment).length,
+      familyHistory: female.filter(d => d.familyHistory === "Yes").length,
+      preferAnonymity: female.filter(d => d.preferAnonymity).length
+    };
+    
+    const undecidedCounts = {
+      soughtTreatment: undecided.filter(d => d.soughtTreatment).length,
+      familyHistory: undecided.filter(d => d.familyHistory === "Yes").length,
+      preferAnonymity: undecided.filter(d => d.preferAnonymity).length
+    };
 
     const data: GenderFactorData[] = [
       {
@@ -77,7 +112,7 @@ export default function GenderDistributionChart() {
 
     // Only used for grouped bars
     const x1 = d3.scaleBand()
-      .domain(['male', 'female', 'undecided'])
+      .domain(activeGenders)
       .rangeRound([0, x0.bandwidth()])
       .padding(0.05);
 
@@ -87,7 +122,7 @@ export default function GenderDistributionChart() {
       .range([innerHeight, 0]);
 
     // Color scale
-    const color = d3.scaleOrdinal()
+    const color = d3.scaleOrdinal<string>()
       .domain(['male', 'female', 'undecided'])
       .range(['#10B981', '#4F46E5', '#F59E0B']);
 
@@ -112,65 +147,266 @@ export default function GenderDistributionChart() {
 
     if (chartType === "bar") {
       // Grouped bar chart
-      g.append("g")
+      const barGroups = g.append("g")
         .selectAll("g")
         .data(data)
         .join("g")
-        .attr("transform", d => `translate(${x0(d.factor)}, 0)`)
-        .selectAll("rect")
-        .data(d => [
-          { key: 'male', value: d.male },
-          { key: 'female', value: d.female },
-          { key: 'undecided', value: d.undecided }
-        ])
+        .attr("transform", d => `translate(${x0(d.factor)}, 0)`);
+        
+      // Add bars
+      barGroups.selectAll("rect")
+        .data(d => activeGenders.map(key => ({
+          key,
+          value: d[key as keyof GenderFactorData] as number,
+          factor: d.factor
+        })))
         .join("rect")
         .attr("x", d => x1(d.key)!)
         .attr("y", d => y(d.value))
         .attr("width", x1.bandwidth())
         .attr("height", d => innerHeight - y(d.value))
-        .attr("fill", d => color(d.key) as string);
+        .attr("fill", d => color(d.key))
+        .style("opacity", 0.8)
+        .on("mouseover", function(event: any, d) {
+          // Highlight the bar
+          d3.select(this).style("opacity", 1);
+          
+          // Get actual counts 
+          let count = 0;
+          let totalByGender = 0;
+          
+          if (d.key === 'male') {
+            count = d.factor === 'Sought Treatment' ? maleCounts.soughtTreatment : 
+                    d.factor === 'Family History' ? maleCounts.familyHistory : 
+                    maleCounts.preferAnonymity;
+            totalByGender = male.length;
+          } else if (d.key === 'female') {
+            count = d.factor === 'Sought Treatment' ? femaleCounts.soughtTreatment : 
+                    d.factor === 'Family History' ? femaleCounts.familyHistory : 
+                    femaleCounts.preferAnonymity;
+            totalByGender = female.length;
+          } else {
+            count = d.factor === 'Sought Treatment' ? undecidedCounts.soughtTreatment : 
+                    d.factor === 'Family History' ? undecidedCounts.familyHistory : 
+                    undecidedCounts.preferAnonymity;
+            totalByGender = undecided.length;
+          }
+          
+          // Show tooltip
+          const gender = d.key.charAt(0).toUpperCase() + d.key.slice(1);
+          tooltip
+            .style("opacity", 1)
+            .html(`
+              <div style="font-weight: bold; margin-bottom: 4px;">${gender} - ${d.factor}</div>
+              <div>Count: ${count} of ${totalByGender}</div>
+              <div>Percentage: ${d.value.toFixed(1)}%</div>
+            `)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mousemove", function(event: any) {
+          // Update tooltip position when moving
+          tooltip
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseleave", function() {
+          // Reset the bar and hide tooltip
+          d3.select(this).style("opacity", 0.8);
+          tooltip.style("opacity", 0);
+        });
+        
+      // Add percentage labels directly on bars
+      barGroups.selectAll("text")
+        .data(d => activeGenders.map(key => ({
+          key,
+          value: d[key as keyof GenderFactorData] as number,
+          factor: d.factor
+        })))
+        .join("text")
+        .attr("x", d => x1(d.key)! + x1.bandwidth()/2)
+        .attr("y", d => y(d.value) - 5)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "8px")
+        .attr("font-weight", "bold")
+        .attr("fill", "currentColor")
+        .text(d => `${Math.round(d.value)}%`);
     } else if (chartType === "stacked") {
+      // Filter the data based on active genders
+      const filteredKeys = activeGenders;
+      
       // Stacked bar chart
       const stackedData = d3.stack<GenderFactorData>()
-        .keys(['male', 'female', 'undecided'])
+        .keys(filteredKeys)
         .value((d, key) => d[key as keyof GenderFactorData] as number)
         (data);
 
-      g.append("g")
+      // Create groups for each stacked series
+      const stackGroups = g.append("g")
         .selectAll("g")
         .data(stackedData)
         .join("g")
-        .attr("fill", d => color(d.key) as string)
-        .selectAll("rect")
-        .data(d => d)
+        .attr("fill", d => color(d.key));
+        
+      // Add the stacked rectangles
+      stackGroups.selectAll("rect")
+        .data(d => d.map(item => ({
+          key: d.key,
+          factor: item.data.factor,
+          value: item.data[d.key as keyof GenderFactorData] as number,
+          y0: item[0],
+          y1: item[1]
+        })))
         .join("rect")
-        .attr("x", d => x0(d.data.factor)!)
-        .attr("y", d => y(d[1]))
-        .attr("height", d => y(d[0]) - y(d[1]))
-        .attr("width", x0.bandwidth());
+        .attr("x", d => x0(d.factor)!)
+        .attr("y", d => y(d.y1))
+        .attr("height", d => y(d.y0) - y(d.y1))
+        .attr("width", x0.bandwidth())
+        .style("opacity", 0.8)
+        .on("mouseover", function(event: any, d) {
+          // Highlight the segment
+          d3.select(this).style("opacity", 1);
+          
+          // Get actual counts 
+          let count = 0;
+          let totalByGender = 0;
+          
+          if (d.key === 'male') {
+            count = d.factor === 'Sought Treatment' ? maleCounts.soughtTreatment : 
+                    d.factor === 'Family History' ? maleCounts.familyHistory : 
+                    maleCounts.preferAnonymity;
+            totalByGender = male.length;
+          } else if (d.key === 'female') {
+            count = d.factor === 'Sought Treatment' ? femaleCounts.soughtTreatment : 
+                    d.factor === 'Family History' ? femaleCounts.familyHistory : 
+                    femaleCounts.preferAnonymity;
+            totalByGender = female.length;
+          } else {
+            count = d.factor === 'Sought Treatment' ? undecidedCounts.soughtTreatment : 
+                    d.factor === 'Family History' ? undecidedCounts.familyHistory : 
+                    undecidedCounts.preferAnonymity;
+            totalByGender = undecided.length;
+          }
+          
+          // Show tooltip
+          const gender = d.key.charAt(0).toUpperCase() + d.key.slice(1);
+          tooltip
+            .style("opacity", 1)
+            .html(`
+              <div style="font-weight: bold; margin-bottom: 4px;">${gender} - ${d.factor}</div>
+              <div>Count: ${count} of ${totalByGender}</div>
+              <div>Percentage: ${d.value.toFixed(1)}%</div>
+            `)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mousemove", function(event: any) {
+          // Update tooltip position when moving
+          tooltip
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseleave", function() {
+          // Reset the segment and hide tooltip
+          d3.select(this).style("opacity", 0.8);
+          tooltip.style("opacity", 0);
+        });
+        
+      // Add text labels for each segment that's big enough to show text
+      stackGroups.selectAll("text")
+        .data(d => d.map(item => ({
+          key: d.key,
+          factor: item.data.factor,
+          value: item.data[d.key as keyof GenderFactorData] as number,
+          y0: item[0],
+          y1: item[1]
+        })))
+        .join("text")
+        .attr("x", d => x0(d.factor)! + x0.bandwidth()/2)
+        .attr("y", d => y((d.y0 + d.y1)/2))
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "middle")
+        .attr("font-size", "9px")
+        .attr("font-weight", "bold")
+        .attr("fill", "white")
+        .style("pointer-events", "none")
+        .text(d => {
+          // Only show percentage if the segment is large enough
+          return y(d.y0) - y(d.y1) > 15 ? `${Math.round(d.value)}%` : '';
+        });
     }
 
-    // Legend
+    // Chart Title
+    svg.append("text")
+      .attr("x", width / 2)
+      .attr("y", 15)
+      .attr("text-anchor", "middle")
+      .attr("font-size", "16px")
+      .attr("font-weight", "bold")
+      .text("Gender Distribution by Mental Health Factors");
+
+    // Add interactive legend
     const legend = svg.append("g")
       .attr("font-family", "sans-serif")
-      .attr("font-size", 10)
+      .attr("font-size", 12)
       .attr("text-anchor", "end")
       .selectAll("g")
       .data(['male', 'female', 'undecided'])
       .join("g")
-      .attr("transform", (d, i) => `translate(${width - 20}, ${i * 20 + 20})`);
+      .attr("transform", (d, i) => `translate(${width - 20}, ${i * 25 + 25})`)
+      .style("cursor", "pointer")
+      .on("click", function(event, d) {
+        // Toggle this gender in the active list
+        if (activeGenders.includes(d)) {
+          if (activeGenders.length > 1) { // Don't remove if it's the last one
+            setActiveGenders(activeGenders.filter(g => g !== d));
+          }
+        } else {
+          setActiveGenders([...activeGenders, d]);
+        }
+      })
+      .on("dblclick", function() {
+        // Reset to show all genders on double click
+        setActiveGenders(['male', 'female', 'undecided']);
+      });
 
+    // Legend colored rects
     legend.append("rect")
-      .attr("x", -17)
-      .attr("width", 15)
-      .attr("height", 15)
-      .attr("fill", d => color(d) as string);
+      .attr("x", -19)
+      .attr("width", 19)
+      .attr("height", 19)
+      .attr("fill", d => color(d))
+      .style("opacity", d => activeGenders.includes(d) ? 1 : 0.3);
 
+    // Legend text
     legend.append("text")
       .attr("x", -24)
       .attr("y", 9.5)
       .attr("dy", "0.32em")
-      .text(d => d.charAt(0).toUpperCase() + d.slice(1));
+      .text(d => d.charAt(0).toUpperCase() + d.slice(1))
+      .style("opacity", d => activeGenders.includes(d) ? 1 : 0.5);
+
+    // Legend instructions
+    svg.append("text")
+      .attr("x", width - 20)
+      .attr("y", 100)
+      .attr("text-anchor", "end")
+      .attr("font-size", "9px")
+      .attr("fill", "#888")
+      .text("Click legend to filter");
+
+    svg.append("text")
+      .attr("x", width - 20)
+      .attr("y", 112)
+      .attr("text-anchor", "end")
+      .attr("font-size", "9px")
+      .attr("fill", "#888")
+      .text("Double-click to reset");
+      
+    // Clean up tooltip on refresh/unmount
+    return () => {
+      tooltip.remove();
+    };
   }
 
   return (
@@ -196,7 +432,7 @@ export default function GenderDistributionChart() {
           </Button>
         </div>
       </div>
-      <CardContent className="p-4">
+      <CardContent className="p-4 relative">
         <div className="h-80">
           <svg
             ref={svgRef}
@@ -205,9 +441,19 @@ export default function GenderDistributionChart() {
             preserveAspectRatio="xMidYMid meet"
           />
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          This chart shows the distribution of mental health factors across different genders. The data suggests varying treatment-seeking behaviors between males and females in tech.
-        </p>
+        
+        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+          <p>
+            This interactive chart shows the distribution of mental health factors across different genders.
+          </p>
+          <ul className="list-disc list-inside pl-2 space-y-0.5">
+            <li>Percentages are displayed directly on the chart</li>
+            <li>Hover over bars to see detailed counts and percentages in a tooltip</li>
+            <li>Click gender in the legend to filter by that gender</li>
+            <li>Double-click legend to reset the view</li>
+            <li>Toggle between grouped and stacked bar views using the buttons above</li>
+          </ul>
+        </div>
       </CardContent>
     </Card>
   );

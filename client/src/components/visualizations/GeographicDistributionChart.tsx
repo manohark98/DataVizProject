@@ -28,8 +28,22 @@ export default function GeographicDistributionChart() {
       return;
     }
 
-    // Clear previous chart
+    // Clear previous chart and create tooltip
     svg.selectAll("*").remove();
+    
+    // Create tooltip
+    const tooltip = d3.select("body")
+      .append("div")
+      .attr("class", "chart-tooltip")
+      .style("position", "absolute")
+      .style("background", "white")
+      .style("border", "1px solid #ddd")
+      .style("border-radius", "4px")
+      .style("padding", "10px")
+      .style("box-shadow", "2px 2px 6px rgba(0, 0, 0, 0.28)")
+      .style("pointer-events", "none")
+      .style("opacity", 0)
+      .style("z-index", 1000);
 
     // Count records by location
     const locationCounts: { [key: string]: number } = {};
@@ -84,8 +98,17 @@ export default function GeographicDistributionChart() {
         .attr("y", innerHeight + margin.bottom - 10)
         .attr("text-anchor", "middle")
         .text("Number of Respondents");
+        
+      // Chart title
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", 15)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "16px")
+        .attr("font-weight", "bold")
+        .text("Top 10 Locations of Respondents");
 
-      // Bars
+      // Bars with tooltips
       g.selectAll(".bar")
         .data(top10)
         .join("rect")
@@ -94,7 +117,38 @@ export default function GeographicDistributionChart() {
         .attr("x", 0)
         .attr("height", y.bandwidth())
         .attr("width", d => x(d.count))
-        .attr("fill", "#4F46E5");
+        .attr("fill", "#4F46E5")
+        .style("opacity", 0.8)
+        .on("mouseover", function(event: any, d) {
+          // Highlight the bar
+          d3.select(this).style("opacity", 1);
+          
+          // Calculate percentage
+          const totalResponses = filteredData.length;
+          const percentage = (d.count / totalResponses) * 100;
+          
+          // Show tooltip
+          tooltip
+            .style("opacity", 1)
+            .html(`
+              <div style="font-weight: bold; margin-bottom: 4px;">${d.location}</div>
+              <div>Respondents: ${d.count}</div>
+              <div>Percentage: ${percentage.toFixed(1)}% of total</div>
+            `)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mousemove", function(event: any) {
+          // Update tooltip position when moving
+          tooltip
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseleave", function() {
+          // Reset the bar and hide tooltip
+          d3.select(this).style("opacity", 0.8);
+          tooltip.style("opacity", 0);
+        });
 
       // Data labels
       g.selectAll(".label")
@@ -112,13 +166,13 @@ export default function GeographicDistributionChart() {
       // with a simplified representation
 
       // Title
-      g.append("text")
-        .attr("x", innerWidth / 2)
-        .attr("y", -10)
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", 15)
         .attr("text-anchor", "middle")
-        .attr("font-size", "14px")
+        .attr("font-size", "16px")
         .attr("font-weight", "bold")
-        .text("Geographic Distribution (Bubble Map)");
+        .text("Geographic Distribution of Respondents");
 
       // Create a color scale
       const color = d3.scaleSequential(d3.interpolateBlues)
@@ -155,7 +209,7 @@ export default function GeographicDistributionChart() {
         }
       });
 
-      // Draw bubbles
+      // Draw bubbles with tooltips
       g.selectAll(".bubble")
         .data(data)
         .join("circle")
@@ -167,8 +221,40 @@ export default function GeographicDistributionChart() {
         .attr("stroke", "#FFF")
         .attr("stroke-width", 0.5)
         .attr("opacity", 0.7)
-        .append("title")
-        .text(d => `${d.location}: ${d.count} respondents`);
+        .on("mouseover", function(event: any, d) {
+          // Highlight the bubble
+          d3.select(this)
+            .style("opacity", 1)
+            .attr("stroke-width", 2);
+          
+          // Calculate percentage
+          const totalResponses = filteredData.length;
+          const percentage = (d.count / totalResponses) * 100;
+          
+          // Show tooltip
+          tooltip
+            .style("opacity", 1)
+            .html(`
+              <div style="font-weight: bold; margin-bottom: 4px;">${d.location}</div>
+              <div>Respondents: ${d.count}</div>
+              <div>Percentage: ${percentage.toFixed(1)}% of total</div>
+            `)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mousemove", function(event: any) {
+          // Update tooltip position when moving
+          tooltip
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseleave", function() {
+          // Reset the bubble and hide tooltip
+          d3.select(this)
+            .style("opacity", 0.7)
+            .attr("stroke-width", 0.5);
+          tooltip.style("opacity", 0);
+        });
 
       // Add country labels for top countries
       g.selectAll(".country-label")
@@ -212,6 +298,11 @@ export default function GeographicDistributionChart() {
         .attr("font-size", "10px")
         .text(d => `${Math.round(d)} respondents`);
     }
+    
+    // Clean up tooltip on refresh/unmount
+    return () => {
+      tooltip.remove();
+    };
   }
 
   return (
@@ -246,9 +337,17 @@ export default function GeographicDistributionChart() {
             preserveAspectRatio="xMidYMid meet"
           />
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          This visualization shows the geographic distribution of survey respondents. The size of each bubble represents the number of responses from that location.
-        </p>
+        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+          <p>
+            This visualization shows the geographic distribution of survey respondents.
+          </p>
+          <ul className="list-disc list-inside pl-2 space-y-0.5">
+            <li>The bubble size represents the number of respondents from each location</li>
+            <li>Hover over bubbles or bars to see detailed information</li>
+            <li>Toggle between Map and Top 10 views using the buttons above</li>
+            <li>In Map view, larger and darker bubbles indicate more responses</li>
+          </ul>
+        </div>
       </CardContent>
     </Card>
   );
